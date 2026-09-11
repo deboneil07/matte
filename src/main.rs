@@ -64,8 +64,6 @@ fn parse_bold(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<String
 }
 
 fn parse_code(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<String> {
-  chars.next();
-
   let mut text: String = String::new();
   while let Some(ct) = chars.next() {
     if ct == '`' {
@@ -84,7 +82,7 @@ fn parse_italic(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<Stri
   let mut text: String = String::new();
   while let Some(c) = chars.next() {
     if c == '*' {
-      return Some(format!("<em>{}<em>", text))
+      return Some(format!("<em>{}</em>", text))
     }
 
     text.push(c);
@@ -98,7 +96,9 @@ fn parse_list_item(line: &str) -> Option<String> {
   if line.starts_with("- ") {
     let text = &line[2..];
 
-    return Some(format!("<li>{}</li>", text));
+    let html = parse_inline(text);
+
+    return Some(format!("<li>{}</li>", html));
   }
 
   None
@@ -115,6 +115,32 @@ fn parse_list(lines: &[&str]) -> String {
   }
 
   html.push_str("</ul>"); 
+  html
+}
+
+fn parse_ordered_list_item(line: &str) -> Option<String> {
+  let mut parts = line.splitn(2, ". ");
+  let number = parts.next()?;
+  let text = parts.next()?;
+
+  if number.parse::<usize>().is_err() {
+    return None;
+  }
+
+  let html = parse_inline(text);
+  Some(format!("<li>{}</li>", html))
+}
+
+fn parse_ordered_list(lines: &[&str]) -> String {
+  let mut html = String::from("<ol>\n");
+
+  for line in lines {
+    if let Some(text) = parse_ordered_list_item(line) {
+      html.push_str(&text);
+      html.push('\n');
+    }
+  }
+  html.push_str("</ol>");
   html
 }
 
@@ -176,6 +202,7 @@ fn parse_document(markdown: &str) -> String {
   let mut list_lines: Vec<&str> = Vec::new();
   let mut html = String::new();
   let mut paragraph_lines: Vec<&str> = Vec::new();
+  let mut ordered_list_lines: Vec<&str> = Vec::new();
 
   for line in &lines {
     if line.trim().is_empty() {
@@ -187,10 +214,17 @@ fn parse_document(markdown: &str) -> String {
       }
 
       if !list_lines.is_empty() {
-        html.push_str(&parse_list(&lines));
+        html.push_str(&parse_list(&list_lines));
         html.push('\n');
 
         list_lines.clear();
+      }
+
+      if !ordered_list_lines.is_empty() {
+        html.push_str(&parse_ordered_list(&ordered_list_lines));
+        html.push('\n');
+
+        ordered_list_lines.clear();
       }
 
       continue;
@@ -202,6 +236,13 @@ fn parse_document(markdown: &str) -> String {
         html.push('\n');
 
         list_lines.clear();
+      }
+
+      if !ordered_list_lines.is_empty() {
+        html.push_str(&parse_ordered_list(&ordered_list_lines));
+        html.push('\n');
+
+        ordered_list_lines.clear();
       }
 
       if !paragraph_lines.is_empty() {
@@ -222,6 +263,11 @@ fn parse_document(markdown: &str) -> String {
       continue;
     }
 
+    if parse_ordered_list_item(line).is_some() {
+      ordered_list_lines.push(line);
+      continue;
+    }
+
     if !list_lines.is_empty() {
         html.push_str(&parse_list(&list_lines));
         html.push('\n');
@@ -232,6 +278,16 @@ fn parse_document(markdown: &str) -> String {
     paragraph_lines.push(line);
   }
 
+  if !ordered_list_lines.is_empty() {
+    html.push_str(&parse_ordered_list(&ordered_list_lines));
+    html.push('\n');
+
+    ordered_list_lines.clear();
+  }
+  if !list_lines.is_empty() {
+      html.push_str(&parse_list(&list_lines));
+      html.push('\n');
+  }
   if !paragraph_lines.is_empty() {
     html.push_str(&parse_paragraph(&paragraph_lines));
     html.push('\n');
