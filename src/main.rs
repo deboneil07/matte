@@ -153,7 +153,18 @@ fn parse_inline(text: &str) -> String {
   
 
   while let Some(c) = chars.next() {
-    if c == '[' {
+    if c == '!' && chars.peek() == Some(&'['){
+      // chars.next();
+
+      if let Some(text) = parse_image(&mut chars) {
+        result.push_str(&text);
+        continue;
+      }
+
+      result.push('!');
+    }
+
+    else if c == '[' {
       if let Some(html) = parse_link(&mut chars) {
         result.push_str(&html);
         continue;
@@ -195,6 +206,35 @@ fn parse_paragraph(lines: &[&str]) -> String {
   let html = parse_inline(&text);
 
   format!("<p>{}</p>", html)
+}
+
+fn parse_image(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<String> {
+  if chars.peek() != Some(&'[') {
+    return None;
+  }
+
+  let remaining: String = chars.clone().collect();
+
+  if let Some(close_bracket) = remaining.find("](") {
+    if let Some(close_paren) = remaining[close_bracket + 2..].find(')') {
+      let alt = &remaining[1..close_bracket];
+
+      let url_start = close_bracket + 2;
+      let url_end = url_start + close_paren;
+
+      let src = &remaining[url_start..url_end];
+
+      let html = format!("<img src=\"{}\" alt=\"{}\">", src, alt);
+
+      for _ in 0..url_end + 1 {
+        chars.next();
+      }
+
+      return Some(html);
+    }
+  }
+
+  None
 }
 
 fn parse_document(markdown: &str) -> String {
