@@ -63,12 +63,28 @@ fn parse_bold(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<String
   None
 }
 
+fn parse_italic(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<String> {
+
+  chars.next();
+  let mut text: String = String::new();
+  while let Some(c) = chars.next() {
+    if c == '*' {
+      return Some(format!("<em>{}<em>", text))
+    }
+
+    text.push(c);
+  }
+
+  None
+  
+}
+
 fn parse_inline(text: &str) -> String {
   let mut result = String::new();
   let mut chars = text.chars().peekable();
 
   // let mut bold: bool = false;
-  let mut italic: bool = false;
+  // let mut italic: bool = false;
   
 
   while let Some(c) = chars.next() {
@@ -89,13 +105,10 @@ fn parse_inline(text: &str) -> String {
     }
 
     else if c == '*' {
-      if italic {
-        result.push_str("</em>");
-      } else {
-        result.push_str("<em>");
-      }
-      italic = !italic
-    }
+      if let Some(ct) = parse_italic(&mut chars) {
+        result.push_str(&ct);
+        continue;
+      }    }
     else {
       result.push(c);
     }
