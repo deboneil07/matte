@@ -63,6 +63,21 @@ fn parse_bold(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<String
   None
 }
 
+fn parse_code(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<String> {
+  chars.next();
+
+  let mut text: String = String::new();
+  while let Some(ct) = chars.next() {
+    if ct == '`' {
+      return Some(format!("<code>{}</code>", text));
+    }
+
+    text.push(ct);
+  }
+
+  None
+}
+
 fn parse_italic(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<String> {
 
   chars.next();
@@ -77,6 +92,30 @@ fn parse_italic(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<Stri
 
   None
   
+}
+
+fn parse_list_item(line: &str) -> Option<String> {
+  if line.starts_with("- ") {
+    let text = &line[2..];
+
+    return Some(format!("<li>{}</li>", text));
+  }
+
+  None
+}
+
+fn parse_list(lines: &[&str]) -> String {
+  let mut html = String::from("<ul>\n");
+
+  for line in lines {
+    if let Some(item) = parse_list_item(line) {
+      html.push_str(&item);
+      html.push('\n');
+    }
+  }
+
+  html.push_str("</ul>"); 
+  html
 }
 
 fn parse_inline(text: &str) -> String {
@@ -109,6 +148,12 @@ fn parse_inline(text: &str) -> String {
         result.push_str(&ct);
         continue;
       }    }
+    else if c == '`' {
+      if let Some(ct) = parse_code(&mut chars) {
+        result.push_str(&ct);
+        continue;
+      }    }
+    
     else {
       result.push(c);
     }
@@ -128,10 +173,11 @@ fn parse_paragraph(lines: &[&str]) -> String {
 
 fn parse_document(markdown: &str) -> String {
   let lines: Vec<&str> = markdown.lines().collect();
+  let mut list_lines: Vec<&str> = Vec::new();
   let mut html = String::new();
   let mut paragraph_lines: Vec<&str> = Vec::new();
 
-  for line in lines {
+  for line in &lines {
     if line.trim().is_empty() {
       if !paragraph_lines.is_empty() {
         html.push_str(&parse_paragraph(&paragraph_lines));
@@ -140,10 +186,24 @@ fn parse_document(markdown: &str) -> String {
         paragraph_lines.clear();
       }
 
+      if !list_lines.is_empty() {
+        html.push_str(&parse_list(&lines));
+        html.push('\n');
+
+        list_lines.clear();
+      }
+
       continue;
     }
 
     if let Some(heading) = parse_heading(line) {
+      if !list_lines.is_empty() {
+        html.push_str(&parse_list(&lines));
+        html.push('\n');
+
+        list_lines.clear();
+      }
+
       if !paragraph_lines.is_empty() {
         html.push_str(&parse_paragraph(&paragraph_lines));
         html.push('\n');
@@ -157,6 +217,18 @@ fn parse_document(markdown: &str) -> String {
       continue;
     }
 
+    if parse_list_item(line).is_some() {
+      list_lines.push(line);
+      continue;
+    }
+
+    if !list_lines.is_empty() {
+        html.push_str(&parse_list(&list_lines));
+        html.push('\n');
+    
+        list_lines.clear();
+    }
+    
     paragraph_lines.push(line);
   }
 
