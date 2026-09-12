@@ -19,7 +19,7 @@ fn parse_heading(line: &str) -> Option<String> {
   None
 }
 
-fn parse_link(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<String> {
+fn parse_link(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<(String, usize)> {
   let remaining: String = chars.clone().collect();
 
   if let Some(close_brac) = remaining.find("](") {
@@ -29,14 +29,15 @@ fn parse_link(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<String
       let url_end = url_st + close_paren;
 
       let url = &remaining[url_st..url_end];
+      let count = url_end + 1;
 
       let html = format!("<a href=\"{}\">{}</a>", url, text);
 
-      for _ in 0..url_end + 1 {
-        chars.next();
-      }
+      // for _ in 0..url_end + 1 {
+      //   chars.next();
+      // }
 
-      return Some(html);
+      return Some((html, count));
     }
   }
 
@@ -168,6 +169,71 @@ fn parse_ordered_list(lines: &[&str]) -> String {
   html
 }
 
+fn push_text(result: &mut String, text: &str) {
+  result.push_str(&escape_html(text));
+}
+
+fn flush_paragraph(html: &mut String, paragraph_lines: &mut Vec<&str>) {
+  if paragraph_lines.is_empty() {
+    return;
+  }
+
+  html.push_str(&parse_paragraph(paragraph_lines));
+  html.push('\n');
+
+  paragraph_lines.clear();
+}
+
+fn flush_unordered_list(html: &mut String, list_lines: &mut Vec<&str>) {
+  if list_lines.is_empty() {
+    return;
+  }
+
+  html.push_str(&parse_list(list_lines));
+  html.push('\n');
+
+  list_lines.clear();
+}
+
+fn flush_ordered_list(html: &mut String, ordered_list_lines: &mut Vec<&str>) {
+  if ordered_list_lines.is_empty() {
+    return;
+  }
+
+  html.push_str(&parse_ordered_list(ordered_list_lines));
+  html.push('\n');
+
+  ordered_list_lines.clear();
+}
+
+fn flush_lists(html: &mut String, list_lines: &mut Vec<&str>, ordered_list_lines: &mut Vec<&str>) {
+  flush_unordered_list(html, list_lines);
+  flush_ordered_list(html, ordered_list_lines);
+}
+
+fn flush_code_block(html: &mut String, code_lines: &mut Vec<&str>) {
+  if code_lines.is_empty() {
+    return;
+  }
+
+  html.push_str("<pre><code>");
+  for line in code_lines.iter() {
+    html.push_str(&escape_html(line));
+    html.push('\n');
+  }
+
+  html.push_str("</code></pre>\n");
+  code_lines.clear();
+}
+
+fn escape_html(text: &str) -> String {
+  text.replace('&', "&amp;")
+  .replace('<', "&lt;")
+  .replace('>', "&gt;")
+  .replace('"', "&quot;")
+  .replace('\'', "&#39;")
+}
+
 fn parse_inline(text: &str) -> String {
   let mut result = String::new();
   let mut chars = text.chars().peekable();
@@ -180,20 +246,30 @@ fn parse_inline(text: &str) -> String {
     if c == '!' && chars.peek() == Some(&'['){
       // chars.next();
 
-      if let Some(text) = parse_image(&mut chars) {
+      if let Some((text, count)) = parse_image(&mut chars) {
         result.push_str(&text);
+
+        for _ in 0..count {
+          chars.next();
+        }
+
         continue;
       }
 
-      result.push('!');
+      push_text(&mut result, "!");
     }
 
     else if c == '[' {
-      if let Some(html) = parse_link(&mut chars) {
+      if let Some((html, consumed)) = parse_link(&mut chars) {
         result.push_str(&html);
+
+        for _ in 0..consumed {
+          chars.next();
+        }
+
         continue;
       }
-      result.push(c);
+      push_text(&mut result, &c.to_string());
     }
     
     else if c == '*' && chars.peek() == Some(&'*') {
@@ -205,7 +281,7 @@ fn parse_inline(text: &str) -> String {
         }
         continue;
       }
-      result.push(c);
+      push_text(&mut result, &c.to_string());
     }
 
     else if c == '*' {
@@ -217,7 +293,7 @@ fn parse_inline(text: &str) -> String {
         }
 
         continue;
-      } result.push(c)    }
+      } push_text(&mut result, &c.to_string());     }
     else if c == '`' {
       if let Some((ct, count)) = parse_code(&mut chars) {
         result.push_str(&ct);
@@ -227,10 +303,10 @@ fn parse_inline(text: &str) -> String {
         }
 
         continue;
-      } result.push(c);  }
+      } push_text(&mut result, &c.to_string());  }
     
     else {
-      result.push(c);
+      push_text(&mut result, &c.to_string());
     }
   }
 
@@ -246,7 +322,7 @@ fn parse_paragraph(lines: &[&str]) -> String {
   format!("<p>{}</p>", html)
 }
 
-fn parse_image(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<String> {
+fn parse_image(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<(String, usize)> {
   if chars.peek() != Some(&'[') {
     return None;
   }
@@ -263,12 +339,13 @@ fn parse_image(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<Strin
       let src = &remaining[url_start..url_end];
 
       let html = format!("<img src=\"{}\" alt=\"{}\">", src, alt);
+      let count = url_end + 1;
 
-      for _ in 0..url_end + 1 {
-        chars.next();
-      }
+      // for _ in 0..url_end + 1 {
+      //   chars.next();
+      // }
 
-      return Some(html);
+      return Some((html, count));
     }
   }
 
@@ -281,54 +358,48 @@ fn parse_document(markdown: &str) -> String {
   let mut html = String::new();
   let mut paragraph_lines: Vec<&str> = Vec::new();
   let mut ordered_list_lines: Vec<&str> = Vec::new();
+  let mut code_lines: Vec<&str> = Vec::new();
+  let mut in_code_block = false;
+  let mut code_language: String = String::new();
 
   for line in &lines {
+    if line.starts_with("```") {
+      if in_code_block {
+        flush_code_block(&mut html, &mut code_lines);
+        code_language.clear();
+      } else {
+        code_language = line[3..].trim().to_string();
+      }
+
+      in_code_block = !in_code_block;
+      continue;
+    }
+
+    if in_code_block {
+      code_lines.push(line);
+      continue;
+    }
+    
     if line.trim().is_empty() {
-      if !paragraph_lines.is_empty() {
-        html.push_str(&parse_paragraph(&paragraph_lines));
-        html.push('\n');
+      flush_paragraph(&mut html, &mut paragraph_lines);
 
-        paragraph_lines.clear();
-      }
-
-      if !list_lines.is_empty() {
-        html.push_str(&parse_list(&list_lines));
-        html.push('\n');
-
-        list_lines.clear();
-      }
-
-      if !ordered_list_lines.is_empty() {
-        html.push_str(&parse_ordered_list(&ordered_list_lines));
-        html.push('\n');
-
-        ordered_list_lines.clear();
-      }
+      flush_lists(
+          &mut html,
+          &mut list_lines,
+          &mut ordered_list_lines,
+      );
 
       continue;
     }
 
     if let Some(heading) = parse_heading(line) {
-      if !list_lines.is_empty() {
-        html.push_str(&parse_list(&lines));
-        html.push('\n');
+      flush_lists(
+          &mut html,
+          &mut list_lines,
+          &mut ordered_list_lines,
+      );
 
-        list_lines.clear();
-      }
-
-      if !ordered_list_lines.is_empty() {
-        html.push_str(&parse_ordered_list(&ordered_list_lines));
-        html.push('\n');
-
-        ordered_list_lines.clear();
-      }
-
-      if !paragraph_lines.is_empty() {
-        html.push_str(&parse_paragraph(&paragraph_lines));
-        html.push('\n');
-
-        paragraph_lines.clear();
-      }
+      flush_paragraph(&mut html, &mut paragraph_lines);
 
       html.push_str(&heading);
       html.push('\n');
@@ -346,30 +417,17 @@ fn parse_document(markdown: &str) -> String {
       continue;
     }
 
-    if !list_lines.is_empty() {
-        html.push_str(&parse_list(&list_lines));
-        html.push('\n');
-    
-        list_lines.clear();
-    }
+    flush_unordered_list(&mut html, &mut list_lines);
     
     paragraph_lines.push(line);
   }
 
-  if !ordered_list_lines.is_empty() {
-    html.push_str(&parse_ordered_list(&ordered_list_lines));
-    html.push('\n');
-
-    ordered_list_lines.clear();
-  }
-  if !list_lines.is_empty() {
-      html.push_str(&parse_list(&list_lines));
-      html.push('\n');
-  }
-  if !paragraph_lines.is_empty() {
-    html.push_str(&parse_paragraph(&paragraph_lines));
-    html.push('\n');
-  }
+  flush_lists(
+      &mut html,
+      &mut list_lines,
+      &mut ordered_list_lines,
+  );
+  flush_paragraph(&mut html, &mut paragraph_lines);
 
   html
 }
@@ -377,7 +435,7 @@ fn parse_document(markdown: &str) -> String {
 fn main() {
   let markdown = fs::read_to_string("content/index.md").expect("Failed to read the md");
 
-  // let text = "Visit [GitHub](https://github.com) for my projects.";
+  // let text = r#"<script>alert("hello")</script>"#;
   // for line in markdown.lines() {
   //   match parse_heading(line) {
   //     Some(html) => println!("{}", html),
@@ -387,6 +445,8 @@ fn main() {
 
   // let lines: Vec<&str> = markdown.lines().collect();
   // let para = parse_paragraph(&lines);
+
+  // println!("{}", escape_html(text));
 
   
   let html = parse_document(&markdown);

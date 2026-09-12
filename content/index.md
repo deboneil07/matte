@@ -1,1 +1,9 @@
-This is **bold**, *italic*, and `code`....
+# Code
+
+```rust
+fn main() {
+    println!("Hello");
+}
+```
+
+After code.
