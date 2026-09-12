@@ -43,19 +43,30 @@ fn parse_link(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<String
   None
 }
 
-fn parse_bold(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<String> {
+fn parse_bold(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<(String, usize)> {
 
-  if chars.peek() != Some(&'*') {
+  // if chars.peek() != Some(&'*') {
+  //   return None;
+  // }
+
+  // chars.next();
+
+  let mut lookahead = chars.clone();
+  if lookahead.next() != Some('*') {
     return None;
   }
 
-  chars.next();
-
+  
   let mut text = String::new();
-  while let Some(txt) = chars.next() {
-    if txt == '*' && chars.peek() == Some(&'*') {
-      chars.next(); 
-      return Some(format!("<strong>{}</strong>", text));
+  let mut count = 1;
+  
+  while let Some(txt) = lookahead.next() {
+    count += 1;
+    if txt == '*' && lookahead.peek() == Some(&'*') {
+      lookahead.next(); 
+      count += 1;
+      
+      return Some((format!("<strong>{}</strong>", text), count,));
     }
 
     text.push(txt);
@@ -63,11 +74,16 @@ fn parse_bold(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<String
   None
 }
 
-fn parse_code(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<String> {
+fn parse_code(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<(String, usize)> {
+
+  let mut lookahead = chars.clone();
   let mut text: String = String::new();
-  while let Some(ct) = chars.next() {
+  let mut count = 0;
+  
+  while let Some(ct) = lookahead.next() {
+    count += 1;
     if ct == '`' {
-      return Some(format!("<code>{}</code>", text));
+      return Some((format!("<code>{}</code>", text), count));
     }
 
     text.push(ct);
@@ -76,18 +92,26 @@ fn parse_code(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<String
   None
 }
 
-fn parse_italic(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<String> {
+fn parse_italic(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<(String, usize)> {
 
-  chars.next();
+  // chars.next();
+
+  let mut lookahead = chars.clone();
+  // if lookahead.next() != Some('*') {
+  //   return None;
+  // }
+  
   let mut text: String = String::new();
-  while let Some(c) = chars.next() {
+  let mut count: usize = 0;
+  
+  while let Some(c) = lookahead.next() {
+    count+=1;
     if c == '*' {
-      return Some(format!("<em>{}</em>", text))
+      return Some((format!("<em>{}</em>", text), count));
     }
 
     text.push(c);
   }
-
   None
   
 }
@@ -173,23 +197,37 @@ fn parse_inline(text: &str) -> String {
     }
     
     else if c == '*' && chars.peek() == Some(&'*') {
-      if let Some(txt) = parse_bold(&mut chars) {
+      // chars.next();
+      if let Some((txt, count)) = parse_bold(&mut chars) {
         result.push_str(&txt);
+        for _ in 0..count {
+          chars.next();
+        }
         continue;
       }
       result.push(c);
     }
 
     else if c == '*' {
-      if let Some(ct) = parse_italic(&mut chars) {
+      if let Some((ct, count)) = parse_italic(&mut chars) {
         result.push_str(&ct);
+
+        for _ in 0..count {
+          chars.next();
+        }
+
         continue;
-      }    }
+      } result.push(c)    }
     else if c == '`' {
-      if let Some(ct) = parse_code(&mut chars) {
+      if let Some((ct, count)) = parse_code(&mut chars) {
         result.push_str(&ct);
+
+        for _ in 0..count {
+          chars.next();
+        }
+
         continue;
-      }    }
+      } result.push(c);  }
     
     else {
       result.push(c);
