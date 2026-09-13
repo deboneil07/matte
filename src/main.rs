@@ -207,16 +207,22 @@ fn flush_ordered_list(html: &mut String, ordered_list_lines: &mut Vec<&str>) {
 }
 
 fn flush_lists(html: &mut String, list_lines: &mut Vec<&str>, ordered_list_lines: &mut Vec<&str>) {
+  
   flush_unordered_list(html, list_lines);
   flush_ordered_list(html, ordered_list_lines);
 }
 
-fn flush_code_block(html: &mut String, code_lines: &mut Vec<&str>) {
+fn flush_code_block(html: &mut String, code_lines: &mut Vec<&str>, language: &str) {
   if code_lines.is_empty() {
     return;
   }
 
-  html.push_str("<pre><code>");
+  if language.is_empty() {
+    html.push_str("<pre><code>");
+  } else {
+    html.push_str(&format!("<pre><code class=\"language-{}\">", escape_html(language)));
+  }
+  
   for line in code_lines.iter() {
     html.push_str(&escape_html(line));
     html.push('\n');
@@ -224,6 +230,24 @@ fn flush_code_block(html: &mut String, code_lines: &mut Vec<&str>) {
 
   html.push_str("</code></pre>\n");
   code_lines.clear();
+}
+
+fn flush_blockquote(result: &mut String, quote_lines: &mut Vec<&str>) {
+  if quote_lines.is_empty() {
+    return;
+  }
+
+  let content: Vec<&str> = quote_lines.iter().copied().filter(|line| !line.is_empty()).collect();
+
+  result.push_str("<blockquote>\n");
+  result.push_str("<p>");
+  result.push_str(&parse_inline(&content.join("\n")));
+  result.push_str("</p>\n");
+  result.push_str("</blockquote>\n");
+  quote_lines.clear();
+
+
+  
 }
 
 fn escape_html(text: &str) -> String {
@@ -359,28 +383,33 @@ fn parse_document(markdown: &str) -> String {
   let mut paragraph_lines: Vec<&str> = Vec::new();
   let mut ordered_list_lines: Vec<&str> = Vec::new();
   let mut code_lines: Vec<&str> = Vec::new();
+  let mut quote_lines: Vec<&str> = Vec::new();
   let mut in_code_block = false;
   let mut code_language: String = String::new();
 
   for line in &lines {
-    if line.starts_with("```") {
-      if in_code_block {
-        flush_code_block(&mut html, &mut code_lines);
+    if in_code_block {
+      if line.starts_with("```") {
+        flush_code_block(&mut html, &mut code_lines, &code_language);
+
         code_language.clear();
-      } else {
-        code_language = line[3..].trim().to_string();
+        in_code_block = false;
+        continue;
       }
 
-      in_code_block = !in_code_block;
+      code_lines.push(line);
       continue;
     }
 
-    if in_code_block {
-      code_lines.push(line);
+    if line.starts_with("```") {
+      code_language = line[3..].trim().to_string();
+      in_code_block = true;
       continue;
     }
     
     if line.trim().is_empty() {
+       flush_blockquote(&mut html, &mut quote_lines);
+      
       flush_paragraph(&mut html, &mut paragraph_lines);
 
       flush_lists(
@@ -389,6 +418,12 @@ fn parse_document(markdown: &str) -> String {
           &mut ordered_list_lines,
       );
 
+      continue;
+    }
+
+    if line.starts_with('>') {
+      let content = line[1..].trim_start();
+      quote_lines.push(content);
       continue;
     }
 
@@ -399,6 +434,8 @@ fn parse_document(markdown: &str) -> String {
           &mut ordered_list_lines,
       );
 
+      flush_blockquote(&mut html, &mut quote_lines);
+
       flush_paragraph(&mut html, &mut paragraph_lines);
 
       html.push_str(&heading);
@@ -406,6 +443,9 @@ fn parse_document(markdown: &str) -> String {
 
       continue;
     }
+
+    flush_blockquote(&mut html, &mut quote_lines);
+    
 
     if parse_list_item(line).is_some() {
       list_lines.push(line);
@@ -417,17 +457,26 @@ fn parse_document(markdown: &str) -> String {
       continue;
     }
 
+    flush_blockquote(&mut html, &mut quote_lines);
+
     flush_unordered_list(&mut html, &mut list_lines);
     
     paragraph_lines.push(line);
   }
+
+  flush_blockquote(&mut html, &mut quote_lines);
 
   flush_lists(
       &mut html,
       &mut list_lines,
       &mut ordered_list_lines,
   );
+  
   flush_paragraph(&mut html, &mut paragraph_lines);
+
+  if in_code_block {
+    flush_code_block(&mut html, &mut code_lines, &code_language);
+  }
 
   html
 }

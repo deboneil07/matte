@@ -1,9 +1,13 @@
-# Code
+# Notes
 
-```rust
-fn main() {
-    println!("Hello");
-}
-```
+This is a normal paragraph.
 
-After code.
+> This is a **blockquote**.
+> It continues on another line.
+>
+> This is a second quote paragraph.
+
+- First item
+- Second item
+
+> Final quote
